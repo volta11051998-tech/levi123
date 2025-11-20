@@ -72,10 +72,9 @@ def simulate(full_months,
     monthly_rows = []
 
     pool = initial_pool
-    monthly_TO = to_per_session * sessions_per_day * 30
     session_idx = 0
 
-    for month in range(1, full_months+1):
+    for month in range(1, full_months + 1):
 
         total_to = 0
         jp_paid = 0
@@ -83,18 +82,21 @@ def simulate(full_months,
 
         for day in range(30):
             for _ in range(sessions_per_day):
+
                 session_idx += 1
                 total_to += to_per_session
 
+                # Add to pool
                 pool += to_per_session * contribute_percent
 
-                # Determine win chance by pool ranges
+                # Determine win chance
                 win_percent = 0
                 for rmin, rmax, p in pool_ranges:
                     if rmin <= pool <= rmax:
                         win_percent = p
                         break
 
+                # Jackpot hit
                 if random.random() < win_percent:
                     hit_logs.append({
                         "month": month,
@@ -117,8 +119,6 @@ def simulate(full_months,
             "pl_percent": pl_percent
         })
 
-        monthly_TO *= (1 + growth_per_month)
-
     return hit_logs, monthly_rows
 
 # ============================
@@ -129,6 +129,7 @@ st.sidebar.header("⚙️ Config mô phỏng")
 months = st.sidebar.number_input("Số tháng mô phỏng", 1, 60, 6)
 sessions_day = st.sidebar.number_input("Số sessions mỗi ngày", 100, 2000, 900)
 initial_pool = st.sidebar.number_input("Giá trị hủ ban đầu", 1_000_000, 50_000_000, 10_000_000)
+
 contribute_percent_ui = st.sidebar.number_input(
     "% contribute",
     min_value=0.000001,
@@ -136,18 +137,13 @@ contribute_percent_ui = st.sidebar.number_input(
     value=0.5,
     format="%.4f"
 )
-
-# Convert to decimal before using in simulation
-contribute_percent = contribute_percent_ui / 100
-
-)
+contribute_percent = contribute_percent_ui / 100   # convert to decimal
 
 to_per_session = st.sidebar.number_input("TO / session", 1_000_000, 50_000_000, 10_000_000)
 growth = st.sidebar.number_input("% tăng trưởng TO / tháng", 0.0, 2.0, 1.0)
 
-# Editable pool ranges
+# Pool ranges config
 st.sidebar.subheader("📌 Pool Ranges & Win Probability (%)")
-
 default_ranges = [
     (0, 15_000_000, 0.00010000),
     (15_000_000, 40_000_000, 0.00050000),
@@ -160,22 +156,20 @@ pool_ranges = []
 for i in range(5):
     st.sidebar.write(f"Range {i+1}")
 
-    r1 = st.sidebar.number_input(
+    rmin = st.sidebar.number_input(
         f"Min {i+1}",
         min_value=0,
         max_value=5_000_000_000,
         value=default_ranges[i][0],
-        key=f"rmin{i}",
-        format="%d",
+        key=f"rmin{i}"
     )
 
-    r2 = st.sidebar.number_input(
+    rmax = st.sidebar.number_input(
         f"Max {i+1}",
         min_value=0,
         max_value=5_000_000_000,
         value=default_ranges[i][1],
-        key=f"rmax{i}",
-        format="%d",
+        key=f"rmax{i}"
     )
 
     wp = st.sidebar.number_input(
@@ -183,15 +177,17 @@ for i in range(5):
         min_value=0.00000001,
         max_value=1.0,
         value=float(default_ranges[i][2]),
-        key=f"wp{i}",
         format="%.8f",
+        key=f"wp{i}"
     )
 
-    pool_ranges.append((r1, r2, wp))
+    pool_ranges.append((rmin, rmax, wp))
+
 # ============================
-# RUN BUTTON
+# RUN SIMULATION
 # ============================
 if st.sidebar.button("🚀 Run Simulation"):
+
     hit_logs, monthly_rows = simulate(
         months,
         sessions_day,
@@ -218,7 +214,7 @@ if st.sidebar.button("🚀 Run Simulation"):
     df_mon["profit_mil"] = df_mon["profit"] / 1_000_000
     df_mon["pl_fmt"] = df_mon["pl_percent"].apply(lambda x: f"{x:.2f}%")
 
-    st.dataframe(df_mon[["month","TO_fmt","jp_count","jp_paid_bil","profit_mil","pl_fmt"]])
+    st.dataframe(df_mon[["month", "TO_fmt", "jp_count", "jp_paid_bil", "profit_mil", "pl_fmt"]])
 
     # STATISTICS
     st.header("📈 STATISTICS")
