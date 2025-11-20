@@ -1,243 +1,256 @@
 import streamlit as st
 import pandas as pd
-import random
-import plotly.graph_objects as go
+import numpy as np
+import matplotlib.pyplot as plt
+from statistics import mean
 
-# ============================
-# CONFIG PAGE
-# ============================
-st.set_page_config(
-    page_title="Volta MD5 Jackpot Simulator PRO",
-    layout="wide"
-)
+from jackpot_engine import simulate_session, fmt_money
 
-# ============================
-# CSS THEME (Dark Premium)
-# ============================
+# ====================================
+# UI THEME (BINANCE PREMIUM DARK MODE)
+# ====================================
+st.set_page_config(page_title="Volta MD5 Jackpot Simulator PRO", layout="wide")
+
 st.markdown("""
 <style>
-    body {
-        background-color: #0d0d0d !important;
-    }
-    .main {
-        background-color: #0d0d0d !important;
-        color: #FFFFFF !important;
-    }
-    .stButton>button {
-        background: linear-gradient(90deg, #ff930f, #ff3d00);
-        color: white;
-        border-radius: 6px;
-        padding: 0.6rem 1.2rem;
-        border: none;
-    }
-    .stNumberInput>div>div>input {
-        background-color: #1c1c1c !important;
-        color: white !important;
-        border-radius: 6px;
-        border: 1px solid #444;
-    }
-    .stTextInput>div>div>input {
-        background-color: #1c1c1c !important;
-        color: white !important;
-        border-radius: 6px;
-        border: 1px solid #333;
-    }
-    .block-container {
-        padding-top: 1rem;
-    }
+body {
+    background-color: #0D1117;
+    color: #E6EDF3;
+}
+.block-container {
+    padding-top: 2rem;
+}
+.sidebar .sidebar-content {
+    background-color: #111826;
+}
+.css-1d391kg { color: #E6EDF3 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ============================
-# FORMAT FUNCTION
-# ============================
-def fmt(v):
-    return f"{v:,.0f}"
+st.title("🎰 **Volta MD5 Jackpot Simulator PRO — Binance Dark Premium**")
 
-def fmt_float(v):
-    return f"{v:,.2f}"
-
-# ============================
-# SIMULATION CORE
-# ============================
-def simulate(full_months,
-             sessions_per_day,
-             initial_pool,
-             contribute_percent,
-             to_per_session,
-             growth_per_month,
-             pool_ranges):
-
-    hit_logs = []
-    monthly_rows = []
-
-    pool = initial_pool
-    session_idx = 0
-
-    for month in range(1, full_months + 1):
-
-        total_to = 0
-        jp_paid = 0
-        jp_count = 0
-
-        for day in range(30):
-            for _ in range(sessions_per_day):
-
-                session_idx += 1
-                total_to += to_per_session
-
-                # Add to pool
-                pool += to_per_session * contribute_percent
-
-                # Determine win chance
-                win_percent = 0
-                for rmin, rmax, p in pool_ranges:
-                    if rmin <= pool <= rmax:
-                        win_percent = p
-                        break
-
-                # Jackpot hit
-                if random.random() < win_percent:
-                    hit_logs.append({
-                        "month": month,
-                        "cycle": session_idx,
-                        "value": pool
-                    })
-                    jp_count += 1
-                    jp_paid += pool
-                    pool = initial_pool
-
-        profit = (total_to * contribute_percent) - jp_paid
-        pl_percent = profit / total_to * 100
-
-        monthly_rows.append({
-            "month": month,
-            "TO": total_to,
-            "jp_count": jp_count,
-            "jp_paid": jp_paid,
-            "profit": profit,
-            "pl_percent": pl_percent
-        })
-
-    return hit_logs, monthly_rows
-
-# ============================
+# ====================================
 # SIDEBAR CONFIG
-# ============================
-st.sidebar.header("⚙️ Config mô phỏng")
+# ====================================
+st.sidebar.header("⚙️ Configuration")
 
-months = st.sidebar.number_input("Số tháng mô phỏng", 1, 60, 6)
-sessions_day = st.sidebar.number_input("Số sessions mỗi ngày", 100, 2000, 900)
-initial_pool = st.sidebar.number_input("Giá trị hủ ban đầu", 1_000_000, 50_000_000, 10_000_000)
+months = st.sidebar.number_input("Số tháng mô phỏng", 1, 36, 6)
+sessions_month = st.sidebar.number_input("Số trận mỗi tháng", 1000, 100000, 25500)
+initial_pool = st.sidebar.number_input("Giá trị hủ ban đầu (VND)", 1_000_000, 50_000_000, 10_000_000)
 
-contribute_percent_ui = st.sidebar.number_input(
-    "% contribute",
+contribute_percent = st.sidebar.number_input(
+    "% Contribute hủ theo TO trận",
     min_value=0.000001,
-    max_value=100.0,
+    max_value=1.0,
     value=0.5,
-    format="%.4f"
-)
-contribute_percent = contribute_percent_ui / 100   # convert to decimal
+    step=0.000001
+) / 100
 
-to_per_session = st.sidebar.number_input("TO / session", 1_000_000, 50_000_000, 10_000_000)
-growth = st.sidebar.number_input("% tăng trưởng TO / tháng", 0.0, 2.0, 1.0)
+to_per_session = st.sidebar.number_input("TO / trận (VND)", 1_000_000, 50_000_000, 10_000_000)
 
-# Pool ranges config
-st.sidebar.subheader("📌 Pool Ranges & Win Probability (%)")
+growth_rate = st.sidebar.number_input(
+    "% tăng trưởng TO mỗi tháng",
+    min_value=0.0,
+    max_value=100.0,
+    value=15.0
+) / 100
+
+# ================================
+# POOL RANGES — Premium UI
+# ================================
+st.sidebar.subheader("🎲 Pool Ranges & Win Probability (%)")
+
 default_ranges = [
-    (0, 15_000_000, 0.00010000),
-    (15_000_000, 40_000_000, 0.00050000),
-    (40_000_000, 80_000_000, 0.00100000),
-    (80_000_000, 150_000_000, 0.00200000),
-    (150_000_000, 500_000_000, 0.00500000),
+    (0, 15_000_000, 0.001),
+    (15_000_000, 40_000_000, 0.005),
+    (40_000_000, 80_000_000, 0.020),
+    (80_000_000, 150_000_000, 0.050),
+    (150_000_000, float('inf'), 0.300)
 ]
 
 pool_ranges = []
+
 for i in range(5):
-    st.sidebar.write(f"Range {i+1}")
+    st.sidebar.write(f"**Range {i+1}**")
+    c1, c2, c3 = st.sidebar.columns(3)
 
-    rmin = st.sidebar.number_input(
-        f"Min {i+1}",
-        min_value=0,
-        max_value=5_000_000_000,
-        value=default_ranges[i][0],
-        key=f"rmin{i}"
-    )
-
-    rmax = st.sidebar.number_input(
-        f"Max {i+1}",
-        min_value=0,
-        max_value=5_000_000_000,
-        value=default_ranges[i][1],
-        key=f"rmax{i}"
-    )
-
-    wp = st.sidebar.number_input(
-        f"Win % {i+1}",
-        min_value=0.00000001,
-        max_value=1.0,
-        value=float(default_ranges[i][2]),
-        format="%.8f",
-        key=f"wp{i}"
-    )
-
-    pool_ranges.append((rmin, rmax, wp))
-
-# ============================
-# RUN SIMULATION
-# ============================
-if st.sidebar.button("🚀 Run Simulation"):
-
-    hit_logs, monthly_rows = simulate(
-        months,
-        sessions_day,
-        initial_pool,
-        contribute_percent,
-        to_per_session,
-        growth,
-        pool_ranges
-    )
-
-    st.title("💥 Volta MD5 Jackpot Simulator PRO – Version A")
-
-    # HIT TABLE
-    st.header("🔔 BẢNG 10 LẦN NỔ GẦN ĐÂY NHẤT")
-    df_hit = pd.DataFrame(hit_logs).sort_values("cycle", ascending=False).head(10)
-    df_hit["value_fmt"] = df_hit["value"].apply(fmt)
-    st.dataframe(df_hit[["month", "cycle", "value_fmt"]])
-
-    # MONTHLY SUMMARY
-    st.header("📊 CHI TIẾT TỪNG THÁNG")
-    df_mon = pd.DataFrame(monthly_rows)
-    df_mon["TO_fmt"] = df_mon["TO"] / 1_000_000_000
-    df_mon["jp_paid_bil"] = df_mon["jp_paid"] / 1_000_000_000
-    df_mon["profit_mil"] = df_mon["profit"] / 1_000_000
-    df_mon["pl_fmt"] = df_mon["pl_percent"].apply(lambda x: f"{x:.2f}%")
-
-    st.dataframe(df_mon[["month", "TO_fmt", "jp_count", "jp_paid_bil", "profit_mil", "pl_fmt"]])
-
-    # STATISTICS
-    st.header("📈 STATISTICS")
-    st.write(f"• Tổng số lần nổ: **{len(hit_logs)}**")
-    st.write(f"• Avg Cycle (sessions/hit): **{fmt(len(hit_logs) and (max([h['cycle'] for h in hit_logs]) / len(hit_logs)) or 0)}**")
-    st.write(f"• Growth/month: **{growth*100:.2f}%**")
-    st.write(f"• Sessions/day: **{sessions_day}**")
-
-    # TIMELINE CHART
-    st.header("📌 Jackpot Timeline (Cycle → Value)")
-    if len(hit_logs) > 0:
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=[h["cycle"] for h in hit_logs],
-            y=[h["value"] for h in hit_logs],
-            mode="lines+markers",
-            line=dict(width=2),
-            marker=dict(size=6)
-        ))
-        fig.update_layout(
-            template="plotly_dark",
-            height=400,
-            xaxis_title="Cycle",
-            yaxis_title="Jackpot Value"
+    with c1:
+        min_v = st.number_input(
+            f"Min {i+1} (VND)",
+            min_value=0,
+            value=default_ranges[i][0]
         )
-        st.plotly_chart(fig, use_container_width=True)
+    with c2:
+        max_raw = st.text_input(
+            f"Max {i+1}",
+            value="inf" if default_ranges[i][1] == float('inf') else f"{default_ranges[i][1]}"
+        )
+        max_v = float('inf') if max_raw == "inf" else int(max_raw)
+    with c3:
+        win_pct = st.number_input(
+            f"Win% {i+1}",
+            min_value=0.000001, max_value=100.0,
+            step=0.000001,
+            value=default_ranges[i][2]
+        )
+
+    pool_ranges.append((min_v, max_v, win_pct))
+
+# ====================================
+# RUN SIMULATION
+# ====================================
+if st.sidebar.button("▶️ RUN SIMULATION", type="primary"):
+    st.header("📊 Simulation Results")
+
+    # Core trackers
+    pool = initial_pool
+    total_to = 0
+    total_payout = 0
+    hits = []
+    detailed = []
+    hit_index = 1
+    since_reset = 0
+
+    monthly_summary = []
+
+    for m in range(1, months + 1):
+        growth = (1 + growth_rate) ** (m - 1)
+        to_session_g = to_per_session * growth
+        contrib = to_session_g * contribute_percent
+
+        payout_month = 0
+        month_hits = 0
+        monthly_to = to_session_g * sessions_month
+
+        for s in range(1, sessions_month + 1):
+            total_to += to_session_g
+            since_reset += 1
+
+            is_win, pool, wp = simulate_session(pool, contrib, pool_ranges)
+
+            if is_win:
+                hits.append((m, since_reset, pool, wp))
+                detailed.append({
+                    "STT": hit_index,
+                    "Tháng": m,
+                    "Số Match": since_reset,
+                    "Tiền Hủ": fmt_money(pool)
+                })
+                hit_index += 1
+
+                payout_month += pool
+                total_payout += pool
+                month_hits += 1
+
+                pool = initial_pool
+                since_reset = 0
+
+        pl_before = monthly_to * 0.01
+        pl_after = pl_before - payout_month
+        pl_percent_after = pl_after / monthly_to * 100
+
+        monthly_summary.append({
+            "Tháng": m,
+            "TO": monthly_to,
+            "Payout": payout_month,
+            "PL_before": pl_before,
+            "PL_after": pl_after,
+            "PL_percent_after": pl_percent_after,
+            "Hits": month_hits
+        })
+
+    # =============================
+    # KEY METRICS
+    # =============================
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Total TO", fmt_money(total_to))
+    with c2:
+        st.metric("Total Payout", fmt_money(total_payout))
+    with c3:
+        st.metric("P/L (1% TO)", fmt_money(total_to * 0.01))
+    with c4:
+        st.metric("Net P/L", fmt_money(total_to * 0.01 - total_payout))
+
+    # =============================
+    # Detailed Hits Table
+    # =============================
+    st.subheader("📋 Detailed Hit Records")
+    st.dataframe(pd.DataFrame(detailed), hide_index=True)
+
+    # =============================
+    # Monthly Summary
+    # =============================
+    st.subheader("📅 Monthly Summary")
+
+    df = []
+    for row in monthly_summary:
+        df.append({
+            "Tháng": row["Tháng"],
+            "TO (B)": f"{row['TO']/1e9:.2f}",
+            "Payout (B)": f"{row['Payout']/1e9:.3f}",
+            "PL Before (B)": f"{row['PL_before']/1e9:.3f}",
+            "PL After (B)": f"{row['PL_after']/1e9:.3f}",
+            "% P/L After": f"{row['PL_percent_after']:.2f}%",
+            "Hits": row["Hits"]
+        })
+
+    st.dataframe(pd.DataFrame(df), hide_index=True)
+
+    # =============================
+    # Statistics
+    # =============================
+    st.subheader("📈 Statistics")
+
+    if len(hits) > 0:
+        cycles = [h[1] for h in hits]
+        values = [h[2] for h in hits]
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.write(f"**Total Hits:** {len(hits)}")
+            st.write(f"**Avg Cycle:** {mean(cycles):.1f} sessions")
+        with c2:
+            st.write(f"**Avg Jackpot:** {fmt_money(mean(values))}")
+
+    # =============================
+    # Charts — Binance Style
+    # =============================
+    st.subheader("📉 Charts")
+
+    if len(hits):
+        cycles = [h[1] for h in hits]
+        values = [h[2]/1e6 for h in hits]
+
+        fig, axs = plt.subplots(2, 2, figsize=(14, 10))
+        fig.patch.set_facecolor("#0D1117")
+
+        # Chart styling
+        for ax in axs.flatten():
+            ax.set_facecolor("#111826")
+            ax.tick_params(colors="white")
+            ax.title.set_color("white")
+            ax.xaxis.label.set_color("white")
+            ax.yaxis.label.set_color("white")
+
+        # 1 — Cycle histogram
+        axs[0, 0].hist(cycles, bins=30, color="#F0B90B")
+        axs[0, 0].set_title("Cycle Distribution (Sessions)")
+
+        # 2 — Jackpot Timeline
+        axs[0, 1].plot(cycles, values, color="#F0B90B")
+        axs[0, 1].set_title("Jackpot Timeline (Sessions vs Value)")
+
+        # 3 — Jackpot Value
+        axs[1, 0].scatter(range(len(values)), values, color="#F0B90B")
+        axs[1, 0].set_title("Jackpot Value Over Time (M VND)")
+
+        # 4 — Hits per month
+        mm = [h[0] for h in hits]
+        axs[1, 1].bar(range(1, months+1), [mm.count(m) for m in range(1, months+1)], color="#F0B90B")
+        axs[1, 1].set_title("Hit Count per Month")
+
+        st.pyplot(fig)
+
+st.sidebar.markdown("---")
+st.sidebar.write("**Volta MD5 Jackpot Simulator PRO — Binance Edition**")
