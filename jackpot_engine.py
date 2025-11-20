@@ -1,105 +1,172 @@
 import random
 import pandas as pd
 
-def simulate_month(
-    month_index,
-    sessions_per_month=27000,
-    base_pool=10_000_000,
-    config_percent=0.003,
-    to_per_session=10_000_000,
-    win_config=None
-):
-    """
-    Trả về:
-    - detailed_df: bảng từng lần nổ
-    - final_pool: giá trị hủ cuối tháng
-    - total_to: tổng TO tháng
-    - total_jp_paid: tổng jackpot trả
-    """
-    if win_config is None:
-        win_config = [
-            {"min": 15_000_000, "max": 30_000_000, "prob": 0.001},
-            {"min": 30_000_000, "max": 50_000_000, "prob": 0.0005},
-            {"min": 50_000_000, "max": 80_000_000, "prob": 0.0003},
-            {"min": 80_000_000, "max": 120_000_000, "prob": 0.00015},
-            {"min": 120_000_000, "max": 200_000_000, "prob": 0.0001},
-        ]
+# ============================
+# SHORT FORMAT CONVERSION
+# ============================
 
+def short_number(n):
+    """Convert number to 10K / 10M / 1.2B format."""
+    try:
+        n = float(n)
+    except:
+        return n
+
+    if abs(n) >= 1_000_000_000:
+        return f"{n/1_000_000_000:.2f}B"
+    elif abs(n) >= 1_000_000:
+        return f"{n/1_000_000:.2f}M"
+    elif abs(n) >= 1_000:
+        return f"{n/1_000:.2f}K"
+    return f"{n:,.0f}"
+
+
+# ============================
+# SIMULATE ONE FULL MONTH
+# ============================
+
+def simulate_month(
+    days,
+    sessions_per_day,
+    base_pool,
+    contribute_percent,
+    to_per_session,
+    win_config
+):
     pool = base_pool
     total_to = 0
     records = []
-    cycle = 0
+    month_jps = []
 
-    for _ in range(sessions_per_month):
-        cycle += 1
-        total_to += to_per_session
-        pool += to_per_session * config_percent
+    session_index = 0
 
-        # check jackpot win config
-        for cfg in win_config:
-            if cfg["min"] <= pool <= cfg["max"]:
-                if random.random() < cfg["prob"]:
-                    # jackpot hit
-                    records.append({
-                        "month": month_index,
-                        "cycle": cycle,
-                        "value": pool,
-                        "win_prob": cfg["prob"]
-                    })
-                    pool = base_pool
-                    cycle = 0
+    for d in range(days):
+        for _ in range(sessions_per_day):
+            stake = to_per_session
+            session_index += 1
+            total_to += stake
+            pool += stake * contribute_percent
+
+            # find current win % based on pool range
+            current_prob = 0
+            for row in win_config:
+                if row["min"] <= pool <= row["max"]:
+                    current_prob = row["prob"]
                     break
 
-    total_jp_paid = sum([r["value"] for r in records])
-    detailed_df = pd.DataFrame(records)
-    return detailed_df, pool, total_to, total_jp_paid
+            is_jp = random.random() < (current_prob / 100)
+
+            if is_jp:
+                month_jps.append({
+                    "session": session_index,
+                    "value": pool,
+                    "win_prob": current_prob
+                })
+                pool = base_pool
+
+    return {
+        "total_to": total_to,
+        "jackpots": month_jps,
+        "ending_pool": pool
+    }
 
 
-def simulate_month_multi(
-    runs=100,
-    sessions_per_month=27000,
-    base_pool=10_000_000,
-    config_percent=0.003,
-    to_per_session=10_000_000,
-    win_config=None
+# ============================
+# MULTI-MONTH SIMULATION
+# ============================
+
+def simulate_n_months(
+    months,
+    base_sessions,
+    base_pool,
+    contribute_percent,
+    to_per_session,
+    growth_rate,
+    win_config
 ):
-    """
-    Chạy 1 tháng nhiều lần → Output 10 cột:
-    run, total_wins, avg_win_value, max_win_value,
-    min_win_value, end_pool, final_total_to, total_jp_paid,
-    profit, profit_percent
-    """
-    results = []
 
-    for i in range(1, runs + 1):
-        df, final_pool, total_to, total_jp = simulate_month(
-            month_index=1,
-            sessions_per_month=sessions_per_month,
+    all_jp = []
+    monthly_summary = []
+
+    current_sessions = base_sessions
+    current_to = to_per_session
+
+    for m in range(1, months + 1):
+
+        result = simulate_month(
+            days=30,
+            sessions_per_day=current_sessions,
             base_pool=base_pool,
-            config_percent=config_percent,
-            to_per_session=to_per_session,
+            contribute_percent=contribute_percent,
+            to_per_session=current_to,
             win_config=win_config
         )
 
-        total_wins = len(df)
-        avg_win = df["value"].mean() if total_wins > 0 else 0
-        max_win = df["value"].max() if total_wins > 0 else 0
-        min_win = df["value"].min() if total_wins > 0 else 0
+        total_to = result["total_to"]
+        jp_paid = sum(j["value"] for j in result["jackpots"])
+        jp_count = len(result["jackpots"])
 
-        profit = (total_to * config_percent) - total_jp
-        profit_percent = (profit / total_to * 100) if total_to > 0 else 0
+        profit_before = total_to * 0.01
+        final_profit = profit_before - jp_paid
+        pl_after = final_profit / total_to * 100 if total_to > 0 else 0
 
-        results.append({
-            "run": i,
-            "total_wins": total_wins,
-            "avg_win_value": avg_win,
-            "max_win_value": max_win,
-            "min_win_value": min_win,
-            "end_pool": final_pool,
-            "final_total_to": total_to,
-            "total_jp_paid": total_jp,
-            "profit": profit,
-            "profit_percent": profit_percent
+        for j in result["jackpots"]:
+            all_jp.append({
+                "month": m,
+                "session": j["session"],
+                "value": j["value"],
+                "win_prob": j["win_prob"]
+            })
+
+        monthly_summary.append({
+            "month": m,
+            "to": total_to,
+            "jp_count": jp_count,
+            "jp_paid": jp_paid,
+            "profit_before": profit_before,
+            "profit_after": final_profit,
+            "pl_after": pl_after
         })
 
-    return pd.DataFrame(results)
+        # growth
+        current_sessions = int(current_sessions * (1 + growth_rate))
+        current_to = int(current_to * (1 + growth_rate))
+
+    df_jp = pd.DataFrame(all_jp)
+    df_month = pd.DataFrame(monthly_summary)
+
+    return df_jp, df_month
+
+
+# ============================
+# MONTE CARLO - RUN X TIMES
+# ============================
+
+def monte_carlo_month(
+    runs,
+    sessions,
+    base_pool,
+    contribute_percent,
+    to_per_session,
+    win_config
+):
+    results = []
+
+    for _ in range(runs):
+        r = simulate_month(
+            days=30,
+            sessions_per_day=sessions,
+            base_pool=base_pool,
+            contribute_percent=contribute_percent,
+            to_per_session=to_per_session,
+            win_config=win_config
+        )
+        results.append(r)
+
+    df = pd.DataFrame([{
+        "jackpot_hits": len(r["jackpots"]),
+        "max_jp": max([j["value"] for j in r["jackpots"]], default=0),
+        "avg_jp": (sum([j["value"] for j in r["jackpots"]]) / len(r["jackpots"])) if len(r["jackpots"]) > 0 else 0
+    } for r in results])
+
+    return df
