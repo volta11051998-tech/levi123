@@ -129,12 +129,17 @@ st.sidebar.header("⚙️ Config mô phỏng")
 months = st.sidebar.number_input("Số tháng mô phỏng", 1, 60, 6)
 sessions_day = st.sidebar.number_input("Số sessions mỗi ngày", 100, 2000, 900)
 initial_pool = st.sidebar.number_input("Giá trị hủ ban đầu", 1_000_000, 50_000_000, 10_000_000)
-contribute_percent = st.sidebar.number_input(
-    "% contribute (0.00000001 → 1.00000000)",
-    min_value=0.00000001,
-    max_value=1.0,
-    value=0.005,
-    format="%.8f",
+contribute_percent_ui = st.sidebar.number_input(
+    "% contribute",
+    min_value=0.000001,
+    max_value=100.0,
+    value=0.5,
+    format="%.4f"
+)
+
+# Convert to decimal before using in simulation
+contribute_percent = contribute_percent_ui / 100
+
 )
 
 to_per_session = st.sidebar.number_input("TO / session", 1_000_000, 50_000_000, 10_000_000)
