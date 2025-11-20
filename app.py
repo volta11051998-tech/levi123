@@ -1,104 +1,100 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from jackpot_engine import simulate_month, monte_carlo
+from jackpot_engine import simulate_full
 
 st.set_page_config(page_title="Jackpot Simulator PRO", layout="wide")
 
-st.title("🎰 Jackpot Simulator – Volta Balance PRO")
+st.title("🎰 Jackpot Simulator PRO – Volta Balance")
 
-# --------------------------
-# LEFT SIDEBAR CONFIG
-# --------------------------
+st.sidebar.header("⚙️ Cấu hình mô phỏng")
 
-with st.sidebar:
-    st.header("⚙️ Simulation Config")
+months = st.sidebar.number_input("Số tháng mô phỏng", 1, 36, 6)
+sessions_per_day = st.sidebar.number_input("Sessions/ngày", 100, 2000, 850)
+init_pool = st.sidebar.number_input("Initial Pool", 1_000_000, 50_000_000, 10_000_000)
+to_per_session = st.sidebar.number_input("TO mỗi session", 1_000_000, 30_000_000, 20_000_000)
+contribute_percent = st.sidebar.number_input("Contribution %", 0.1, 5.0, 0.5)
+growth_percent = st.sidebar.number_input("TO Growth % mỗi tháng", 0.0, 50.0, 15.0)
 
-    months = st.number_input("Months to simulate", 1, 36, 3)
-    sessions = st.number_input("Sessions per day", 100, 2000, 850)
-    init_pool = st.number_input("Initial pool value", 1_000_000, 50_000_000, 10_000_000, step=1_000_000)
-    to_per_session = st.number_input("TO per session", 1_000_000, 30_000_000, 10_000_000, step=1_000_000)
-    contribute = st.number_input("Contribution %", 0.1, 5.0, 0.5)
+st.sidebar.subheader("📌 Win probability table")
+rows = st.sidebar.number_input("Số dòng", 1, 10, 5)
 
-    st.subheader("📊 Turnover Growth")
-    growth_pct = st.number_input("Monthly TO Growth %", 0.0, 100.0, 15.0)
+pool_ranges = []
+for i in range(rows):
+    c1, c2, c3 = st.sidebar.columns(3)
+    min_p = c1.number_input(f"Min {i+1}", 0, 5_000_000_000, 0)
+    max_p = c2.number_input(f"Max {i+1}", 0, 5_000_000_000, 20_000_000)
+    prob = c3.number_input(f"Win% {i+1}", 0.0, 100.0, 0.0)
+    pool_ranges.append((min_p, max_p, prob))
 
-    st.subheader("🏆 Win Probability Table")
-    st.markdown("Nhập theo format: **min, max, win_prob%**")
+if st.sidebar.button("🚀 Run Simulation"):
+    st.success("Đang chạy mô phỏng...")
 
-    rows = st.number_input("Number of range rows", 1, 10, 5)
+    df_all, df_jp = simulate_full(
+        months,
+        sessions_per_day,
+        init_pool,
+        to_per_session,
+        contribute_percent,
+        pool_ranges,
+        growth_percent
+    )
 
-    pool_ranges = []
-    for i in range(rows):
-        c1, c2, c3 = st.columns(3)
-        min_p = c1.number_input(f"Min Pool {i+1}", 0, 5_000_000_000, 0)
-        max_p = c2.number_input(f"Max Pool {i+1}", 0, 5_000_000_000, 20_000_000)
-        prob = c3.number_input(f"Win % {i+1}", 0.0, 100.0, 0.0)
-        pool_ranges.append((min_p, max_p, prob))
+    # =============================
+    # 🧨 BẢNG 10 LẦN NỔ GẦN NHẤT
+    # =============================
+    st.header("🧨 BẢNG 10 LẦN NỔ GẦN ĐÂY NHẤT")
 
-# --------------------------
-# RUN SIMULATION
-# --------------------------
-if st.button("🚀 Run Simulation"):
-    st.success("Running...")
+    df_last10 = df_jp.sort_values("month", ascending=False).tail(10)[
+        ["month", "cycle", "value", "win_prob"]
+    ]
 
-    current_to = to_per_session
-    df_all = []
+    df_last10["value"] = df_last10["value"] / 1_000_000
+    df_last10["win_prob"] = df_last10["win_prob"].round(2)
 
-    for m in range(months):
-        df = simulate_month(
-            days=30,
-            sessions_per_day=sessions,
-            initial_pool=init_pool,
-            to_per_session=current_to,
-            contribute_percent=contribute,
-            pool_ranges=pool_ranges
-        )
-        df["month"] = m + 1
-        df_all.append(df)
+    df_last10.columns = ["Tháng", "Cycle (trận)", "Giá trị (triệu)", "Win %"]
 
-        current_to *= (1 + growth_pct/100)
+    st.table(df_last10)
 
-    df_final = pd.concat(df_all)
+    # =============================
+    # 📊 CHI TIẾT TỪNG THÁNG
+    # =============================
+    st.header("📊 CHI TIẾT TỪNG THÁNG")
 
-    st.subheader("📌 Monthly Summary")
-    summary = df_final.groupby("month")[["TO", "jackpot_payout", "net_pl"]].sum()
-    st.dataframe(summary)
+    summary = df_all.groupby("month").agg({
+        "TO": "sum",
+        "jackpot_payout": "sum",
+        "net_pl": "sum"
+    })
 
-    fig = px.line(summary, y=["TO", "jackpot_payout", "net_pl"], markers=True)
+    summary["Nổ (lần)"] = df_jp.groupby("month").size()
+    summary["TO (tỷ)"] = summary["TO"] / 1_000_000_000
+    summary["Trả JP (tỷ)"] = summary["jackpot_payout"] / 1_000_000_000
+    summary["Lãi ròng (triệu)"] = summary["net_pl"] / 1_000_000
+    summary["P/L (%)"] = summary["net_pl"] / summary["TO"]
+
+    summary = summary[["TO (tỷ)", "Nổ (lần)", "Trả JP (tỷ)", "Lãi ròng (triệu)", "P/L (%)"]]
+    st.table(summary.style.format({
+        "TO (tỷ)": "{:.2f}",
+        "Trả JP (tỷ)": "{:.2f}",
+        "Lãi ròng (triệu)": "{:,.0f}",
+        "P/L (%)": "{:.2%}"
+    }))
+
+    # =============================
+    # 📈 BIỂU ĐỒ
+    # =============================
+    fig = px.line(
+        summary,
+        y=["TO (tỷ)", "Trả JP (tỷ)", "Lãi ròng (triệu)"],
+        markers=True,
+        title="📈 Xu hướng theo tháng"
+    )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Export download
     st.download_button(
-        "📥 Download CSV",
-        df_final.to_csv().encode("utf-8"),
-        "jackpot_result.csv",
+        "📥 Download Full CSV",
+        df_all.to_csv().encode("utf-8"),
+        "jackpot_full.csv",
         "text/csv"
     )
-
-# --------------------------
-# MONTE CARLO
-# --------------------------
-st.header("📈 Monte-Carlo Analysis")
-
-runs = st.number_input("Monte-Carlo Runs", 10, 3000, 200)
-
-if st.button("Run Monte-Carlo"):
-    st.info("Running Monte-Carlo...")
-    mc = monte_carlo(
-        runs=runs,
-        days=30,
-        sessions_per_day=sessions,
-        initial_pool=init_pool,
-        to_per_session=to_per_session,
-        contribute_percent=contribute,
-        pool_ranges=pool_ranges
-    )
-
-    df_mc = pd.DataFrame({"P/L": mc})
-    fig2 = px.histogram(df_mc, x="P/L", nbins=40)
-    st.plotly_chart(fig2, use_container_width=True)
-
-    st.write("Mean P/L:", df_mc["P/L"].mean())
-    st.write("Worst Case:", df_mc["P/L"].min())
-    st.write("Best Case:", df_mc["P/L"].max())
