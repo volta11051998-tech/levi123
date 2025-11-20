@@ -9,6 +9,7 @@ def get_win_probability(pool_value, win_config):
         {"min": 20_000_000, "max": 30_000_000, "prob": 0.0005},
         {"min": 30_000_000, "max": 50_000_000, "prob": 0.001},
         {"min": 50_000_000, "max": 999_000_000, "prob": 0.003}
+        {"min": 50_000_000, "max": 999_000_000, "prob": 0.003}
     ]
     """
     for cfg in win_config:
