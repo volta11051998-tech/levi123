@@ -129,7 +129,14 @@ st.sidebar.header("⚙️ Config mô phỏng")
 months = st.sidebar.number_input("Số tháng mô phỏng", 1, 60, 6)
 sessions_day = st.sidebar.number_input("Số sessions mỗi ngày", 100, 2000, 900)
 initial_pool = st.sidebar.number_input("Giá trị hủ ban đầu", 1_000_000, 50_000_000, 10_000_000)
-contribute_percent = st.sidebar.number_input("% contribute (0.00001 → 1.00000)", 0.00001, 1.0, 0.005)
+contribute_percent = st.sidebar.number_input(
+    "% contribute (0.00000001 → 1.00000000)",
+    min_value=0.00000001,
+    max_value=1.0,
+    value=0.005,
+    format="%.8f",
+)
+
 to_per_session = st.sidebar.number_input("TO / session", 1_000_000, 50_000_000, 10_000_000)
 growth = st.sidebar.number_input("% tăng trưởng TO / tháng", 0.0, 2.0, 1.0)
 
@@ -137,21 +144,45 @@ growth = st.sidebar.number_input("% tăng trưởng TO / tháng", 0.0, 2.0, 1.0)
 st.sidebar.subheader("📌 Pool Ranges & Win Probability (%)")
 
 default_ranges = [
-    (0, 15_000_000, 0.0001),
-    (15_000_000, 40_000_000, 0.0005),
-    (40_000_000, 80_000_000, 0.0010),
-    (80_000_000, 150_000_000, 0.0020),
-    (150_000_000, 500_000_000, 0.0050)
+    (0, 15_000_000, 0.00010000),
+    (15_000_000, 40_000_000, 0.00050000),
+    (40_000_000, 80_000_000, 0.00100000),
+    (80_000_000, 150_000_000, 0.00200000),
+    (150_000_000, 500_000_000, 0.00500000),
 ]
 
 pool_ranges = []
 for i in range(5):
     st.sidebar.write(f"Range {i+1}")
-    r1 = st.sidebar.number_input(f"Min {i+1}", 0, 5_000_000_000, default_ranges[i][0], key=f"rmin{i}")
-    r2 = st.sidebar.number_input(f"Max {i+1}", 0, 5_000_000_000, default_ranges[i][1], key=f"rmax{i}")
-    wp = st.sidebar.number_input(f"Win % {i+1}", 0.00000, 1.0, default_ranges[i][5], key=f"wp{i}")
-    pool_ranges.append((r1, r2, wp))
 
+    r1 = st.sidebar.number_input(
+        f"Min {i+1}",
+        min_value=0,
+        max_value=5_000_000_000,
+        value=default_ranges[i][0],
+        key=f"rmin{i}",
+        format="%d",
+    )
+
+    r2 = st.sidebar.number_input(
+        f"Max {i+1}",
+        min_value=0,
+        max_value=5_000_000_000,
+        value=default_ranges[i][1],
+        key=f"rmax{i}",
+        format="%d",
+    )
+
+    wp = st.sidebar.number_input(
+        f"Win % {i+1}",
+        min_value=0.00000001,
+        max_value=1.0,
+        value=float(default_ranges[i][2]),
+        key=f"wp{i}",
+        format="%.8f",
+    )
+
+    pool_ranges.append((r1, r2, wp))
 # ============================
 # RUN BUTTON
 # ============================
