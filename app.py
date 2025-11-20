@@ -24,7 +24,7 @@ growth_rate = col6.number_input("% tăng trưởng TO mỗi tháng", 0.0, 0.3, 0
 
 st.subheader("⚙️ Config Win Probability by Pool Range")
 win_config = []
-for i in range(4):
+for i in range(5):
     cols = st.columns(3)
     min_v = cols[0].number_input(f"Min range {i+1}", 0, 1_000_000_000, i*10_000_000)
     max_v = cols[1].number_input(f"Max range {i+1}", 1, 2_000_000_000, (i+1)*10_000_000)
