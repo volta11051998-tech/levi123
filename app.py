@@ -149,7 +149,7 @@ for i in range(5):
     st.sidebar.write(f"Range {i+1}")
     r1 = st.sidebar.number_input(f"Min {i+1}", 0, 5_000_000_000, default_ranges[i][0], key=f"rmin{i}")
     r2 = st.sidebar.number_input(f"Max {i+1}", 0, 5_000_000_000, default_ranges[i][1], key=f"rmax{i}")
-    wp = st.sidebar.number_input(f"Win % {i+1}", 0.0, 1.0, default_ranges[i][2], key=f"wp{i}")
+    wp = st.sidebar.number_input(f"Win % {i+1}", 0.00000, 1.0, default_ranges[i][5], key=f"wp{i}")
     pool_ranges.append((r1, r2, wp))
 
 # ============================
