@@ -16,68 +16,91 @@ def simulate_month(
     to_per_session,
     contribute_percent,
     pool_ranges,
+    month_index,
     seed=None
 ):
     if seed:
         random.seed(seed)
 
     contribute_value = to_per_session * contribute_percent / 100
-
-    results = []
     pool = initial_pool
-    day_idx = 1
-    session_global = 0
+    sessions_since_reset = 0
+    jackpot_events = []
 
-    for _ in range(days):
+    daily_rows = []
+    global_sessions = 0
+
+    for day in range(1, days + 1):
         day_to = 0
         day_payout = 0
-        day_jackpots = []
+        jackpot_list = []
 
-        for s in range(sessions_per_day):
-            session_global += 1
-            pool += contribute_value
+        for _ in range(sessions_per_day):
+            global_sessions += 1
+            sessions_since_reset += 1
             day_to += to_per_session
+            pool += contribute_value
 
             win_prob = get_win_prob(pool, pool_ranges)
 
             if random.random() < (win_prob / 100):
-                day_jackpots.append(pool)
+                jackpot_events.append({
+                    "month": month_index,
+                    "cycle": sessions_since_reset,
+                    "value": pool,
+                    "win_prob": win_prob / 100
+                })
+
+                jackpot_list.append(pool)
                 day_payout += pool
                 pool = initial_pool
+                sessions_since_reset = 0
 
-        results.append({
-            "day": day_idx,
+        daily_rows.append({
+            "day": day,
+            "month": month_index,
             "TO": day_to,
             "jackpot_payout": day_payout,
             "net_pl": day_to - day_payout,
-            "jackpots": day_jackpots,
+            "jackpots": jackpot_list,
         })
 
-        day_idx += 1
+    df = pd.DataFrame(daily_rows)
+    df_jp = pd.DataFrame(jackpot_events)
 
-    df = pd.DataFrame(results)
-    return df
+    return df, df_jp
 
 
-def monte_carlo(
-    runs,
-    days,
+def simulate_full(
+    months,
     sessions_per_day,
     initial_pool,
     to_per_session,
     contribute_percent,
-    pool_ranges
+    pool_ranges,
+    growth_percent
 ):
-    outs = []
-    for r in range(runs):
-        df = simulate_month(
-            days,
-            sessions_per_day,
-            initial_pool,
-            to_per_session,
-            contribute_percent,
-            pool_ranges,
-            seed=r
+    all_month_df = []
+    all_jp_df = []
+    current_to = to_per_session
+
+    for m in range(1, months + 1):
+        df_month, df_jp = simulate_month(
+            days=30,
+            sessions_per_day=sessions_per_day,
+            initial_pool=initial_pool,
+            to_per_session=current_to,
+            contribute_percent=contribute_percent,
+            pool_ranges=pool_ranges,
+            month_index=m,
+            seed=m
         )
-        outs.append(df["net_pl"].sum())
-    return outs
+
+        df_jp["month"] = m
+
+        all_month_df.append(df_month)
+        all_jp_df.append(df_jp)
+
+        current_to *= (1 + growth_percent / 100)
+
+    return pd.concat(all_month_df), pd.concat(all_jp_df)
